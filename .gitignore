@@ -1,0 +1,11 @@
+build
+.idea
+.DS_Store
+*.iml
+.project
+.settings
+.classpath
+.recommenders
+.gradle
+out
+.jars
