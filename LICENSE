@@ -1,4 +1,4 @@
-The QRNG client
+TLS client example with injected PQC algorithms
 MIT License
 
 Copyright (c) 2024 Sergejs Kozlovics
