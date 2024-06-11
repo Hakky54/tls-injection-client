@@ -1,0 +1,165 @@
+import java.nio.file.Files
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+    }
+}
+
+
+
+repositories {
+    mavenCentral()
+}
+
+tasks.register("tls_injection_mechanism") {
+    doFirst {
+        def directory = new File('src/tls-injection-mechanism')
+        def cloned_dir = new File('../tls-injection-mechanism')
+        def cloned_relative_dir = new File('../../tls-injection-mechanism')
+        if (!directory.exists()) {
+            // cloning...
+            if (!cloned_dir.exists()) {
+                exec {
+                    workingDir '..'
+                    commandLine 'git', 'clone', 'https://github.com/LUMII-Syslab/tls-injection-mechanism.git'
+                }
+                exec {
+                    workingDir cloned_dir
+                    commandLine 'git', 'checkout', 'tls-injection2'
+                }
+            }
+            // symlink...
+            Files.createSymbolicLink(directory.toPath(), cloned_relative_dir.toPath())
+        }
+    }
+}
+
+tasks.register("tls_injection_pqc") {
+    doFirst {
+        def directory = new File('src/tls-injection-pqc')
+        def cloned_dir = new File('../tls-injection-pqc')
+        def cloned_relative_dir = new File('../../tls-injection-pqc')
+        if (!directory.exists()) {
+            // cloning...
+            if (!cloned_dir.exists()) {
+                exec {
+                    workingDir '..'
+                    commandLine 'git', 'clone', 'https://github.com/LUMII-Syslab/tls-injection-pqc.git'
+                }
+            }
+            // symlink...
+            Files.createSymbolicLink(directory.toPath(), cloned_relative_dir.toPath())
+        }
+        def inWindows = System.getProperty("os.name").toLowerCase().contains("windows");
+
+        download.run {
+            src ([
+                    "https://qkd.lumii.lv/liboqs-binaries/Linux-x86_64/liboqs.so",
+                    "https://qkd.lumii.lv/liboqs-binaries/Linux-x86_64/liboqs-jni.so"
+            ])
+            dest "lib/Linux-x86_64"
+            overwrite true
+        }
+        download.run {
+            src ([
+                    "https://qkd.lumii.lv/liboqs-binaries/Darwin-x86_64/liboqs.dylib",
+                    "https://qkd.lumii.lv/liboqs-binaries/Darwin-x86_64/liboqs-jni.dylib"
+            ])
+            dest "lib/Darwin-x86_64"
+            overwrite true
+        }
+
+        download.run {
+            src ([
+                    "https://qkd.lumii.lv/liboqs-binaries/Darwin-arm64/liboqs.dylib",
+                    "https://qkd.lumii.lv/liboqs-binaries/Darwin-arm64/liboqs-jni.dylib"
+            ])
+            dest "lib/Darwin-arm64"
+            overwrite true
+        }
+
+        download.run {
+            src ([
+                    "https://qkd.lumii.lv/liboqs-binaries/Windows-AMD64/liboqs.dll",
+                    "https://qkd.lumii.lv/liboqs-binaries/Windows-AMD64/liboqs-jni.dll"
+            ])
+            dest "lib/Windows-AMD64"
+            overwrite true
+        }
+        download.run {
+            src ([
+                    "https://qkd.lumii.lv/liboqs-binaries/Windows-ARM64/liboqs.dll",
+                    "https://qkd.lumii.lv/liboqs-binaries/Windows-ARM64/liboqs-jni.dll"
+            ])
+            dest "lib/Windows-ARM64"
+            overwrite true
+        }
+
+        if (!inWindows) {
+            exec {
+                workingDir 'lib/Linux-x86_64'
+                commandLine '/bin/bash', '-c', 'chmod +x *.so'
+            }
+            exec {
+                workingDir 'lib/Darwin-x86_64'
+                commandLine '/bin/bash', '-c', 'chmod +x *.dylib'
+            }
+            exec {
+                workingDir 'lib/Darwin-arm64'
+                commandLine '/bin/bash', '-c', 'chmod +x *.dylib'
+            }
+        }
+
+    }
+}
+
+tasks.register("tls_injection_smartcard") {
+    doFirst {
+        def directory = new File('src/tls-injection-smartcard')
+        def cloned_dir = new File('../tls-injection-smartcard')
+        def cloned_relative_dir = new File('../../tls-injection-smartcard')
+        if (!directory.exists()) {
+            // cloning...
+            if (!cloned_dir.exists()) {
+                exec {
+                    workingDir '..'
+                    commandLine 'git', 'clone', 'https://github.com/LUMII-Syslab/tls-injection-smartcard.git'
+                }
+            }
+            // symlink...
+            Files.createSymbolicLink(directory.toPath(), cloned_relative_dir.toPath())
+        }
+
+    }
+}
+
+tasks.register("prerequisites") {
+}
+
+prerequisites.dependsOn(tls_injection_mechanism)
+tls_injection_pqc.dependsOn(tls_injection_mechanism)
+tls_injection_smartcard.dependsOn(tls_injection_mechanism)
+build.dependsOn(prerequisites)
+
+sourceSets.main {
+    java {
+        srcDirs 'src/main/java',
+                'src/tls-injection-mechanism/core/src/main/java',
+                'src/tls-injection-mechanism/pkix/src/main/java',
+                'src/tls-injection-mechanism/prov/src/main/java',
+                'src/tls-injection-mechanism/tls/src/main/java',
+                'src/tls-injection-mechanism/tls/src/main/jdk1.9/org/bouncycastle/jsse/provider',
+                // ^^^ important that we do not include module-info.java (otherwise, the whole BC module farm is needed)
+                // ^^^ and org/bouncycastle/tls/crypto/impl/jcajce/** (otherwise, there are duplicate class files)
+                'src/tls-injection-mechanism/util/src/main/java',
+
+                'src/tls-injection-pqc/src/main/java',
+                'src/tls-injection-smartcard/src/main/java'
+    }
+}
+
+
+compileJava.options.encoding = "UTF-8"
