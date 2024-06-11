@@ -169,6 +169,10 @@ dependencies {
     // Ok Http client
     implementation 'com.squareup.okhttp3:okhttp:5.0.0-alpha.14'
 
+    // SSLFactory builder, see https://github.com/Hakky54/sslcontext-kickstart
+    implementation 'io.github.hakky54:sslcontext-kickstart:8.3.5'
+
+
 //    implementation 'org.java-websocket:Java-WebSocket:1.5.3' -> embedded into src/java/main
     compileOnly 'org.graalvm.buildtools:native-gradle-plugin:0.9.19'
 }
