@@ -136,6 +136,26 @@ tasks.register("tls_injection_smartcard") {
     }
 }
 
+tasks.register("tls_injection_qkd") {
+    doFirst {
+        def directory = new File('src/tls-injection-qkd')
+        def cloned_dir = new File('../tls-injection-qkd')
+        def cloned_relative_dir = new File('../../tls-injection-qkd')
+        if (!directory.exists()) {
+            // cloning...
+            if (!cloned_dir.exists()) {
+                exec {
+                    workingDir '..'
+                    commandLine 'git', 'clone', 'https://github.com/LUMII-Syslab/tls-injection-qkd.git'
+                }
+            }
+            // symlink...
+            Files.createSymbolicLink(directory.toPath(), cloned_relative_dir.toPath())
+        }
+
+    }
+}
+
 tasks.register("prerequisites") {
 }
 
@@ -157,7 +177,9 @@ sourceSets.main {
                 'src/tls-injection-mechanism/util/src/main/java',
 
                 'src/tls-injection-pqc/src/main/java',
-                'src/tls-injection-smartcard/src/main/java'
+                'src/tls-injection-smartcard/src/main/java',
+                'src/tls-injection-qkd/src/main/java'
+
     }
 }
 
