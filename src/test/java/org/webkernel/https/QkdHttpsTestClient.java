@@ -3,6 +3,7 @@ package org.webkernel.https;
 import lv.lumii.qrng.clienttoken.FileToken;
 import lv.lumii.qrng.clienttoken.Token;
 import lv.lumii.qkd.InjectableEtsiKEM;
+import lv.lumii.qrng.clienttoken.TrustStore;
 import nl.altindag.ssl.SSLFactory;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -46,31 +47,36 @@ public class QkdHttpsTestClient {
         return mainDirectory;
     }
 
-    class MyHttpResponseHandler implements HttpClientResponseHandler {
-
-        @Override
-        public Object handleResponse(ClassicHttpResponse classicHttpResponse) throws HttpException, IOException {
-            return null;
-        }
-    }
-
     public static void main(String[] args) throws Exception {
 
         Common.loadNativeLibrary();
-        Token token = new FileToken(MAIN_DIRECTORY + File.separator + "client.pfx", "client-keystore-pass", "client");
 
-        CompletableFuture<SSLFactory> sslFactory = new CompletableFuture<>();
         injectQKD(()->{
+            Token saeToken = new FileToken(
+                    new String[] {MAIN_DIRECTORY + File.separator + "sae-1.crt.pem"},
+                    MAIN_DIRECTORY + File.separator + "sae-1.key.pem",
+                    "");
+            TrustManagerFactory trustMgrFact = new TrustStore(new String[]{MAIN_DIRECTORY + File.separator+"ca.crt.pem"}).trustManagerFactory();
+
             try {
-                return sslFactory.get();
-            }
-            catch(Exception e) {
-                e.printStackTrace();
+                SSLFactory sslf1 = SSLFactory.builder()
+                        .withIdentityMaterial(saeToken.key(), saeToken.password(), saeToken.certificateChain())
+                        .withNeedClientAuthentication()
+                        .withWantClientAuthentication()
+                        .withProtocols("TLSv1.3")
+                        .withTrustMaterial(trustMgrFact)
+                        .withSecureRandom(SecureRandom.getInstanceStrong())
+                        .withCiphers("TLS_AES_256_GCM_SHA384")
+                        .build();
+                return sslf1;
+            } catch (Exception e) {
                 throw new RuntimeException(e);
             }
         });
 
         try {
+            Token token = new FileToken(MAIN_DIRECTORY + File.separator + "client.pfx", "client-keystore-pass", "client");
+
             KeyStore trustStore = KeyStore.getInstance(new File(MAIN_DIRECTORY + File.separator + "ca.truststore"), "ca-truststore-pass".toCharArray());
 
             TrustManagerFactory trustMgrFact = TrustManagerFactory.getInstance("SunX509");
@@ -85,7 +91,6 @@ public class QkdHttpsTestClient {
                     .withSecureRandom(SecureRandom.getInstanceStrong())
                     .withCiphers("TLS_AES_256_GCM_SHA384")
                     .build();
-            sslFactory.complete(sslf2);
 
 
             /*final SSLConnectionSocketFactory sslsf =
@@ -139,7 +144,7 @@ public class QkdHttpsTestClient {
 
     }
 
-    private static void injectQKD(InjectableEtsiKEM.SSLFactoryFactory sslf2) {
+    private static void injectQKD(InjectableEtsiKEM.SSLFactoryFactory sslf1) {
         InjectionPoint injectionPoint = InjectionPoint.theInstance();
         final InjectableAlgorithms initialAlgs = new InjectableAlgorithms();
         injectionPoint.push(initialAlgs);
@@ -152,7 +157,7 @@ public class QkdHttpsTestClient {
                         .withKEM("QKD-ETSI",
                                 0xFEFE, // from the reserved-for-private-use range, i.e., 0xFE00..0xFEFF for KEMs
                                 () -> new InjectableEtsiKEM(
-                                        sslf2,
+                                        sslf1,
                                         () -> {
                                             try {
                                                 injectionPoint.pop(algsWithEtsi.get());

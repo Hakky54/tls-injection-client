@@ -4,6 +4,7 @@ package org.webkernel.https;
 import lv.lumii.qkd.InjectableEtsiKEM;
 import lv.lumii.qrng.clienttoken.FileToken;
 import lv.lumii.qrng.clienttoken.Token;
+import lv.lumii.qrng.clienttoken.TrustStore;
 import nl.altindag.ssl.SSLFactory;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -66,20 +67,31 @@ public class QkdHttpsTestServer {
     public static void main(String[] args) throws Exception {
 
         Common.loadNativeLibrary();
-        Token token = new FileToken(MAIN_DIRECTORY + File.separator + "server.pfx", "server-keystore-pass", "server");
 
-        CompletableFuture<SSLFactory> sslFactory = new CompletableFuture<>();
-        injectQKD(()->{
+        injectQKD(() -> {
+            Token saeToken = new FileToken(
+                    new String[]{MAIN_DIRECTORY + File.separator + "sae-2.crt.pem"},
+                    MAIN_DIRECTORY + File.separator + "sae-2.key.pem",
+                    "");
+            TrustManagerFactory trustMgrFact = new TrustStore(new String[]{MAIN_DIRECTORY + File.separator + "ca.crt.pem"}).trustManagerFactory();
+
             try {
-                return sslFactory.get();
-            }
-            catch(Exception e) {
-                e.printStackTrace();
+                return SSLFactory.builder()
+                        .withIdentityMaterial(saeToken.key(), saeToken.password(), saeToken.certificateChain())
+                        .withNeedClientAuthentication()
+                        .withWantClientAuthentication()
+                        .withProtocols("TLSv1.3")
+                        .withTrustMaterial(trustMgrFact)
+                        .withSecureRandom(SecureRandom.getInstanceStrong())
+                        .withCiphers("TLS_AES_256_GCM_SHA384")
+                        .build();
+            } catch (Exception e) {
                 throw new RuntimeException(e);
             }
         });
 
         try {
+            Token token = new FileToken(MAIN_DIRECTORY + File.separator + "server.pfx", "server-keystore-pass", "server");
             KeyStore trustStore = KeyStore.getInstance(new File(MAIN_DIRECTORY + File.separator + "ca.truststore"), "ca-truststore-pass".toCharArray());
 
             TrustManagerFactory trustMgrFact = TrustManagerFactory.getInstance("SunX509");
@@ -94,15 +106,11 @@ public class QkdHttpsTestServer {
                     .withSecureRandom(SecureRandom.getInstanceStrong())
                     .withCiphers("TLS_AES_256_GCM_SHA384")
                     .build();
-            sslFactory.complete(sslf2);
-
-
-
 
             Optional<X509ExtendedTrustManager> tm = sslf2.getTrustManager();
 
-            HttpServer server = new HttpServer(Optional.of(sslFactory.get().getSslContext()), 1234,
-                    (socket, requestBuilder)-> new HttpResponse<byte[]>() {
+            HttpServer server = new HttpServer(Optional.of(sslf2.getSslContext()), 1234,
+                    (socket, requestBuilder) -> new HttpResponse<byte[]>() {
                         @Override
                         public int statusCode() {
                             return 200;
@@ -152,7 +160,7 @@ public class QkdHttpsTestServer {
 
     }
 
-    private static void injectQKD(InjectableEtsiKEM.SSLFactoryFactory sslf2) {
+    private static void injectQKD(InjectableEtsiKEM.SSLFactoryFactory sslf1) {
         InjectionPoint injectionPoint = InjectionPoint.theInstance();
         final InjectableAlgorithms initialAlgs = new InjectableAlgorithms();
         injectionPoint.push(initialAlgs);
@@ -165,7 +173,7 @@ public class QkdHttpsTestServer {
                         .withKEM("QKD-ETSI",
                                 0xFEFE, // from the reserved-for-private-use range, i.e., 0xFE00..0xFEFF for KEMs
                                 () -> new InjectableEtsiKEM(
-                                        sslf2,
+                                        sslf1,
                                         () -> {
                                             try {
                                                 injectionPoint.pop(algsWithEtsi.get());
