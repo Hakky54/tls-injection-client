@@ -1,12 +1,10 @@
 package org.webkernel.https;
 
+
+import lv.lumii.qkd.InjectableEtsiKEM;
 import lv.lumii.qrng.clienttoken.FileToken;
 import lv.lumii.qrng.clienttoken.Token;
-import lv.lumii.qkd.InjectableEtsiKEM;
 import nl.altindag.ssl.SSLFactory;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.HttpException;
 import org.apache.hc.core5.http.io.HttpClientResponseHandler;
@@ -15,22 +13,31 @@ import org.bouncycastle.tls.injection.InjectableKEMs;
 import org.bouncycastle.tls.injection.InjectionPoint;
 import org.openquantumsafe.Common;
 
-import javax.net.ssl.TrustManagerFactory;
-import javax.net.ssl.X509ExtendedTrustManager;
+import javax.net.ssl.*;
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.SecureRandom;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
+import java.io.*;
+import java.net.Socket;
+import java.security.KeyStore;
 
-public class QkdHttpsTestClient {
+public class QkdTlsTestServer {
 
     private static final String MAIN_DIRECTORY = mainDirectory();
 
     private static String mainDirectory() {
-        File f = new File(QkdHttpsTestClient.class.getProtectionDomain().getCodeSource().getLocation().getPath());
+        File f = new File(QkdTlsTestServer.class.getProtectionDomain().getCodeSource().getLocation().getPath());
         String mainExecutable = f.getAbsolutePath();
         String mainDirectory = f.getParent();
 
@@ -46,25 +53,19 @@ public class QkdHttpsTestClient {
         return mainDirectory;
     }
 
-    class MyHttpResponseHandler implements HttpClientResponseHandler {
+    private static final int PORT = 8443;
+    private static final String KEYSTORE_PATH = "mykeystore.jks";
+    private static final String KEYSTORE_PASSWORD = "password"; // Change to your keystore password
 
-        @Override
-        public Object handleResponse(ClassicHttpResponse classicHttpResponse) throws HttpException, IOException {
-            return null;
-        }
-    }
-
-    public static void main(String[] args) throws Exception {
-
+    public static void main(String[] args) {
         Common.loadNativeLibrary();
-        Token token = new FileToken(MAIN_DIRECTORY + File.separator + "client.pfx", "client-keystore-pass", "client");
+        Token token = new FileToken(MAIN_DIRECTORY + File.separator + "server.pfx", "server-keystore-pass", "server");
 
         CompletableFuture<SSLFactory> sslFactory = new CompletableFuture<>();
-        injectQKD(()->{
+        injectQKD(() -> {
             try {
                 return sslFactory.get();
-            }
-            catch(Exception e) {
+            } catch (Exception e) {
                 e.printStackTrace();
                 throw new RuntimeException(e);
             }
@@ -88,55 +89,42 @@ public class QkdHttpsTestClient {
             sslFactory.complete(sslf2);
 
 
-            /*final SSLConnectionSocketFactory sslsf =
-                    new SSLConnectionSocketFactory(sslf2.getSslContext(), NoopHostnameVerifier.INSTANCE);
+            // Initialize SSLContext with the KeyManager
+            SSLContext sslContext = sslf2.getSslContext();
 
-            final Registry<ConnectionSocketFactory> socketFactoryRegistry =
-                    RegistryBuilder.<ConnectionSocketFactory> create()
-                            .register("https", sslsf)
-                            .register("http", new PlainConnectionSocketFactory())
-                            .build();
+            sslContext.init(sslf2.getKeyManagerFactory().get().getKeyManagers(), trustMgrFact.getTrustManagers(), null);
 
-            final BasicHttpClientConnectionManager connectionManager =
-                    new BasicHttpClientConnectionManager(socketFactoryRegistry);
+            // Create SSLServerSocketFactory
+            SSLServerSocketFactory sslServerSocketFactory = sslContext.getServerSocketFactory();
 
+            // Create SSLServerSocket
+            SSLServerSocket sslServerSocket = (SSLServerSocket) sslServerSocketFactory.createServerSocket(PORT);
+            sslServerSocket.setEnabledCipherSuites(sslServerSocket.getSupportedCipherSuites());
 
-            CloseableHttpClient httpClient = HttpClients.custom()
-                    .setConnectionManager(connectionManager)
-                    .build();
+            System.out.println("TLS server started on port " + PORT);
 
-            HttpGet request = new HttpGet("https://127.0.0.1:4433");
-            httpClient.execute(request, (classicHttpResponse)->{
-                byte[] b = classicHttpResponse.getEntity().getContent().readAllBytes();
-                String s = new String(b, "UTF-8");
-                System.out.println("BODY="+s);
-                return classicHttpResponse;
-            });*/
+            while (true) {
+                // Accept client connections
+                try {
+                    Socket socket = sslServerSocket.accept();
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                    PrintWriter writer = new PrintWriter(socket.getOutputStream(), true);
 
+                    // Read client message
+                    String message = reader.readLine();
+                    System.out.println("Received: " + message);
 
-            Optional<X509ExtendedTrustManager> tm = sslf2.getTrustManager();
+                    // Send response to client
+                    writer.println("Hello, client! Your message was: " + message);
 
-            OkHttpClient client = new OkHttpClient.Builder()
-                    .sslSocketFactory(sslf2.getSslSocketFactory(), tm.get())
-                    .build();
-
-            Request request = new Request.Builder()
-                    .url("https://127.0.0.1:8443")
-                    //.url("https://127.0.0.1:1234")
-                    //.url("https://127.0.0.1:4433")
-                    //.url("http://127.0.0.1:8080")
-                    .build();
-
-            try (Response response = client.newCall(request).execute()) {
-                if (!response.isSuccessful()) throw new IOException("Unexpected code " + response);
-
-                System.out.println(response.body().string());
+                } catch (Exception clientEx) {
+                    clientEx.printStackTrace();
+                }
             }
+
         } catch (Exception e) {
-            System.err.println("Some exception occurred.1234567");
             e.printStackTrace();
         }
-
     }
 
     private static void injectQKD(InjectableEtsiKEM.SSLFactoryFactory sslf2) {

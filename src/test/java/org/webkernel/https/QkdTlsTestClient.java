@@ -1,8 +1,8 @@
 package org.webkernel.https;
 
+import lv.lumii.qkd.InjectableEtsiKEM;
 import lv.lumii.qrng.clienttoken.FileToken;
 import lv.lumii.qrng.clienttoken.Token;
-import lv.lumii.qkd.InjectableEtsiKEM;
 import nl.altindag.ssl.SSLFactory;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -15,22 +15,22 @@ import org.bouncycastle.tls.injection.InjectableKEMs;
 import org.bouncycastle.tls.injection.InjectionPoint;
 import org.openquantumsafe.Common;
 
+import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509ExtendedTrustManager;
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 
-public class QkdHttpsTestClient {
+public class QkdTlsTestClient {
 
     private static final String MAIN_DIRECTORY = mainDirectory();
 
     private static String mainDirectory() {
-        File f = new File(QkdHttpsTestClient.class.getProtectionDomain().getCodeSource().getLocation().getPath());
+        File f = new File(QkdTlsTestClient.class.getProtectionDomain().getCodeSource().getLocation().getPath());
         String mainExecutable = f.getAbsolutePath();
         String mainDirectory = f.getParent();
 
@@ -46,13 +46,6 @@ public class QkdHttpsTestClient {
         return mainDirectory;
     }
 
-    class MyHttpResponseHandler implements HttpClientResponseHandler {
-
-        @Override
-        public Object handleResponse(ClassicHttpResponse classicHttpResponse) throws HttpException, IOException {
-            return null;
-        }
-    }
 
     public static void main(String[] args) throws Exception {
 
@@ -87,53 +80,20 @@ public class QkdHttpsTestClient {
                     .build();
             sslFactory.complete(sslf2);
 
+            try (SSLSocket sslSocket = (SSLSocket) sslf2.getSslSocketFactory().createSocket("127.0.0.1", 8443);
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(sslSocket.getInputStream()));
+                 PrintWriter writer = new PrintWriter(sslSocket.getOutputStream(), true)) {
 
-            /*final SSLConnectionSocketFactory sslsf =
-                    new SSLConnectionSocketFactory(sslf2.getSslContext(), NoopHostnameVerifier.INSTANCE);
+                // Send message to the server
+                writer.println("Hello, server!");
 
-            final Registry<ConnectionSocketFactory> socketFactoryRegistry =
-                    RegistryBuilder.<ConnectionSocketFactory> create()
-                            .register("https", sslsf)
-                            .register("http", new PlainConnectionSocketFactory())
-                            .build();
-
-            final BasicHttpClientConnectionManager connectionManager =
-                    new BasicHttpClientConnectionManager(socketFactoryRegistry);
-
-
-            CloseableHttpClient httpClient = HttpClients.custom()
-                    .setConnectionManager(connectionManager)
-                    .build();
-
-            HttpGet request = new HttpGet("https://127.0.0.1:4433");
-            httpClient.execute(request, (classicHttpResponse)->{
-                byte[] b = classicHttpResponse.getEntity().getContent().readAllBytes();
-                String s = new String(b, "UTF-8");
-                System.out.println("BODY="+s);
-                return classicHttpResponse;
-            });*/
-
-
-            Optional<X509ExtendedTrustManager> tm = sslf2.getTrustManager();
-
-            OkHttpClient client = new OkHttpClient.Builder()
-                    .sslSocketFactory(sslf2.getSslSocketFactory(), tm.get())
-                    .build();
-
-            Request request = new Request.Builder()
-                    .url("https://127.0.0.1:8443")
-                    //.url("https://127.0.0.1:1234")
-                    //.url("https://127.0.0.1:4433")
-                    //.url("http://127.0.0.1:8080")
-                    .build();
-
-            try (Response response = client.newCall(request).execute()) {
-                if (!response.isSuccessful()) throw new IOException("Unexpected code " + response);
-
-                System.out.println(response.body().string());
+                // Read server response
+                String response = reader.readLine();
+                System.out.println("Server response: " + response);
             }
+
         } catch (Exception e) {
-            System.err.println("Some exception occurred.1234567");
+            System.err.println("Some exception occurred.");
             e.printStackTrace();
         }
 
