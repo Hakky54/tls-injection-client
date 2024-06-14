@@ -78,7 +78,8 @@ dependencies {
     // SSLFactory builder, see https://github.com/Hakky54/sslcontext-kickstart
     implementation 'io.github.hakky54:sslcontext-kickstart:8.3.5'
 
-
+    // Gson JSON parser
+    implementation 'com.google.code.gson:gson:2.11.0'
 //    implementation 'org.java-websocket:Java-WebSocket:1.5.3' -> embedded into src/java/main
     compileOnly 'org.graalvm.buildtools:native-gradle-plugin:0.9.19'
 }
