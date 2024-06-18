@@ -1,29 +1,21 @@
 package org.webkernel.https;
 
 import lv.lumii.qkd.InjectableEtsiKEM;
-import lv.lumii.qrng.clienttoken.FileToken;
-import lv.lumii.qrng.clienttoken.Token;
-import lv.lumii.qrng.clienttoken.TrustStore;
+import lv.lumii.tls.auth.FileToken;
+import lv.lumii.tls.auth.Token;
+import lv.lumii.tls.auth.TrustStore;
 import nl.altindag.ssl.SSLFactory;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
-import org.apache.hc.core5.http.ClassicHttpResponse;
-import org.apache.hc.core5.http.HttpException;
-import org.apache.hc.core5.http.io.HttpClientResponseHandler;
 import org.bouncycastle.tls.injection.InjectableAlgorithms;
 import org.bouncycastle.tls.injection.InjectableKEMs;
 import org.bouncycastle.tls.injection.InjectionPoint;
+import org.bouncycastle.tls.injection.kems.KemFactory;
 import org.openquantumsafe.Common;
 
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManagerFactory;
-import javax.net.ssl.X509ExtendedTrustManager;
 import java.io.*;
 import java.security.KeyStore;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 
@@ -54,14 +46,16 @@ public class QkdTlsTestClient {
         Common.loadNativeLibrary();
 
 
-
-
-        injectQKD(()->{
-            Token saeToken = new FileToken(
+        injectQKD(() -> {
+            /*Token saeToken = new FileToken(
                     new String[] {MAIN_DIRECTORY + File.separator + "sae-1.crt.pem"},
                     MAIN_DIRECTORY + File.separator + "sae-1.key.pem",
-                    "");
-            TrustManagerFactory trustMgrFact = new TrustStore(new String[]{MAIN_DIRECTORY + File.separator+"ca.crt.pem"}).trustManagerFactory();
+                    "");*/
+            Token saeToken = new FileToken(
+                    new String[]{MAIN_DIRECTORY + File.separator + "sae-1.crt.pem"},
+                    MAIN_DIRECTORY + File.separator + "encrypted-sae-1.key.pem",
+                    "abc");
+            TrustManagerFactory trustMgrFact = new TrustStore(new String[]{MAIN_DIRECTORY + File.separator + "ca.crt.pem"}).trustManagerFactory();
 
             try {
                 SSLFactory sslf1 = SSLFactory.builder()
@@ -70,7 +64,7 @@ public class QkdTlsTestClient {
                         .withWantClientAuthentication()
                         .withProtocols("TLSv1.3")
                         .withHostnameVerifier((hostname, session) -> {
-                            System.out.println("TRUSTING HOST NAME "+hostname);
+                            // Trusting the KME host name
                             return true;
                         })
                         .withTrustMaterial(trustMgrFact)
@@ -85,13 +79,13 @@ public class QkdTlsTestClient {
 
         try {
             //For PKCS12 (.pfx):
-            //Token token = new FileToken(MAIN_DIRECTORY + File.separator + "client.pfx", "client-keystore-pass", "client");
+            Token token = new FileToken(MAIN_DIRECTORY + File.separator + "client.pfx", "client-keystore-pass", "client");
 
             //For PEM cert+key:
-            Token token = new FileToken(
-                    new String[] {MAIN_DIRECTORY + File.separator + "client.crt"},
-                    MAIN_DIRECTORY + File.separator + "client.key",
-                    "");
+            /*Token token = new FileToken(
+                    new String[] {MAIN_DIRECTORY + File.separator + "client.crt.pem"},
+                    MAIN_DIRECTORY + File.separator + "client.key.pem",
+                    "abc");*/
             KeyStore trustStore = KeyStore.getInstance(new File(MAIN_DIRECTORY + File.separator + "ca.truststore"), "ca-truststore-pass".toCharArray());
 
             TrustManagerFactory trustMgrFact = TrustManagerFactory.getInstance("SunX509");
@@ -112,7 +106,7 @@ public class QkdTlsTestClient {
                  PrintWriter writer = new PrintWriter(sslSocket.getOutputStream(), true)) {
 
                 // Send message to the server
-                writer.println("Hello, server1!");
+                writer.println("Hello, server!");
 
                 // Read server response
                 String response = reader.readLine();
@@ -133,30 +127,34 @@ public class QkdTlsTestClient {
 
         final CompletableFuture<InjectableAlgorithms> algsWithEtsi = new CompletableFuture<>();
 
+        KemFactory qkdKemFactory = () -> new InjectableEtsiKEM(
+                sslf1,
+                "localhost:8010",
+                "c565d5aa-8670-4446-8471-b0e53e315d2a",
+                () -> {
+                    try {
+                        injectionPoint.pop(algsWithEtsi.get());
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        throw new RuntimeException(e);
+                    }
+                },
+                () -> {
+                    try {
+                        injectionPoint.pushAfter(algsWithEtsi.get(), initialAlgs);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        throw new RuntimeException(e);
+                    }
+                }
+        );
+
         algsWithEtsi.complete( // = assign the value, which can be used using algsWithEtsi.get()
                 initialAlgs
                         .withoutDefaultKEMs()
                         .withKEM("QKD-ETSI",
                                 0xFEFE, // from the reserved-for-private-use range, i.e., 0xFE00..0xFEFF for KEMs
-                                () -> new InjectableEtsiKEM(
-                                        sslf1,
-                                        () -> {
-                                            try {
-                                                injectionPoint.pop(algsWithEtsi.get());
-                                            } catch (Exception e) {
-                                                e.printStackTrace();
-                                                throw new RuntimeException(e);
-                                            }
-                                        },
-                                        () -> {
-                                            try {
-                                                injectionPoint.pushAfter(algsWithEtsi.get(), initialAlgs);
-                                            } catch (Exception e) {
-                                                e.printStackTrace();
-                                                throw new RuntimeException(e);
-                                            }
-                                        }
-                                ),
+                                qkdKemFactory,
                                 InjectableKEMs.Ordering.BEFORE));
         try {
             injectionPoint.pushAfter(algsWithEtsi.get(), initialAlgs);

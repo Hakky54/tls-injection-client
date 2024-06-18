@@ -2,19 +2,17 @@ package org.webkernel.https;
 
 
 import lv.lumii.qkd.InjectableEtsiKEM;
-import lv.lumii.qrng.clienttoken.FileToken;
-import lv.lumii.qrng.clienttoken.Token;
-import lv.lumii.qrng.clienttoken.TrustStore;
+import lv.lumii.tls.auth.FileToken;
+import lv.lumii.tls.auth.Token;
+import lv.lumii.tls.auth.TrustStore;
 import nl.altindag.ssl.SSLFactory;
 import org.bouncycastle.tls.injection.InjectableAlgorithms;
 import org.bouncycastle.tls.injection.InjectableKEMs;
 import org.bouncycastle.tls.injection.InjectionPoint;
+import org.bouncycastle.tls.injection.kems.KemFactory;
 import org.openquantumsafe.Common;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLServerSocket;
-import javax.net.ssl.SSLServerSocketFactory;
-import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.*;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
@@ -67,7 +65,7 @@ public class QkdTlsTestServer {
                         .withWantClientAuthentication()
                         .withProtocols("TLSv1.3")
                         .withHostnameVerifier((hostname, session) -> {
-                            System.out.println("TRUSTING HOST NAME "+hostname);
+                            // Trusting the KME host name
                             return true;
                         })
                         .withTrustMaterial(trustMgrFact)
@@ -99,7 +97,7 @@ public class QkdTlsTestServer {
                     .withNeedClientAuthentication()
                     .withWantClientAuthentication()
                     .withProtocols("TLSv1.3")
-                    .withTrustMaterial(trustMgrFact)
+                    .withTrustMaterial(trustMgrFact) // or just trustStore
                     .withSecureRandom(SecureRandom.getInstanceStrong())
                     .withCiphers("TLS_AES_256_GCM_SHA384")
                     .build();
@@ -107,13 +105,15 @@ public class QkdTlsTestServer {
             // Initialize SSLContext with the KeyManager
             SSLContext sslContext = sslf2.getSslContext();
 
-            sslContext.init(sslf2.getKeyManagerFactory().get().getKeyManagers(), trustMgrFact.getTrustManagers(), null);
+            TrustManager[] trustManagers = trustMgrFact.getTrustManagers();
+            sslContext.init(sslf2.getKeyManagerFactory().get().getKeyManagers(), trustManagers, null);
 
             // Create SSLServerSocketFactory
             SSLServerSocketFactory sslServerSocketFactory = sslContext.getServerSocketFactory();
 
             // Create SSLServerSocket
             SSLServerSocket sslServerSocket = (SSLServerSocket) sslServerSocketFactory.createServerSocket(PORT);
+            sslServerSocket.setNeedClientAuth(true); // <<<<< this is very important line; otherwise, all clients are let in!
             sslServerSocket.setEnabledCipherSuites(sslServerSocket.getSupportedCipherSuites());
 
             System.out.println("TLS server started on port " + PORT);
@@ -149,37 +149,52 @@ public class QkdTlsTestServer {
 
         final CompletableFuture<InjectableAlgorithms> algsWithEtsi = new CompletableFuture<>();
 
+        KemFactory qkdKemFactory = () -> new InjectableEtsiKEM(
+                sslf1,
+                "localhost:8020",
+                "25840139-0dd4-49ae-ba1e-b86731601803",
+                () -> {
+                    try {
+                        injectionPoint.pop(algsWithEtsi.get());
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        throw new RuntimeException(e);
+                    }
+                },
+                () -> {
+                    try {
+                        injectionPoint.pushAfter(algsWithEtsi.get(), initialAlgs);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        throw new RuntimeException(e);
+                    }
+                }
+        );
+
         algsWithEtsi.complete( // = assign the value, which can be used using algsWithEtsi.get()
                 initialAlgs
                         .withoutDefaultKEMs()
                         .withKEM("QKD-ETSI",
                                 0xFEFE, // from the reserved-for-private-use range, i.e., 0xFE00..0xFEFF for KEMs
-                                () -> new InjectableEtsiKEM(
-                                        sslf1,
-                                        () -> {
-                                            try {
-                                                injectionPoint.pop(algsWithEtsi.get());
-                                            } catch (Exception e) {
-                                                e.printStackTrace();
-                                                throw new RuntimeException(e);
-                                            }
-                                        },
-                                        () -> {
-                                            try {
-                                                injectionPoint.pushAfter(algsWithEtsi.get(), initialAlgs);
-                                            } catch (Exception e) {
-                                                e.printStackTrace();
-                                                throw new RuntimeException(e);
-                                            }
-                                        }
-                                ),
+                                qkdKemFactory,
                                 InjectableKEMs.Ordering.BEFORE));
+
+
         try {
             injectionPoint.pushAfter(algsWithEtsi.get(), initialAlgs);
         } catch (Exception e) {
             e.printStackTrace();
             throw new RuntimeException(e);
         }
+
+        try {
+            InjectableEtsiKEM kem = (InjectableEtsiKEM) qkdKemFactory.create();
+            kem.touchKME();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+
     }
 
 

@@ -1,4 +1,4 @@
-package lv.lumii.qrng.clienttoken;
+package lv.lumii.tls.auth;
 
 import java.io.ByteArrayInputStream;
 import java.security.*;

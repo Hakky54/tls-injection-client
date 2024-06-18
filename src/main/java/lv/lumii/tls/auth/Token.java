@@ -1,4 +1,4 @@
-package lv.lumii.qrng.clienttoken;
+package lv.lumii.tls.auth;
 
 import java.security.Key;
 import java.security.cert.Certificate;

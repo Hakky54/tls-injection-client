@@ -1,16 +1,13 @@
 package org.webkernel.https;
 
-import lv.lumii.qrng.clienttoken.FileToken;
-import lv.lumii.qrng.clienttoken.Token;
+import lv.lumii.tls.auth.FileToken;
+import lv.lumii.tls.auth.Token;
 import lv.lumii.qkd.InjectableEtsiKEM;
-import lv.lumii.qrng.clienttoken.TrustStore;
+import lv.lumii.tls.auth.TrustStore;
 import nl.altindag.ssl.SSLFactory;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
-import org.apache.hc.core5.http.ClassicHttpResponse;
-import org.apache.hc.core5.http.HttpException;
-import org.apache.hc.core5.http.io.HttpClientResponseHandler;
 import org.bouncycastle.tls.injection.InjectableAlgorithms;
 import org.bouncycastle.tls.injection.InjectableKEMs;
 import org.bouncycastle.tls.injection.InjectionPoint;
@@ -158,6 +155,8 @@ public class QkdHttpsTestClient {
                                 0xFEFE, // from the reserved-for-private-use range, i.e., 0xFE00..0xFEFF for KEMs
                                 () -> new InjectableEtsiKEM(
                                         sslf1,
+                                        "localhost:8010",
+                                        "c565d5aa-8670-4446-8471-b0e53e315d2a",
                                         () -> {
                                             try {
                                                 injectionPoint.pop(algsWithEtsi.get());

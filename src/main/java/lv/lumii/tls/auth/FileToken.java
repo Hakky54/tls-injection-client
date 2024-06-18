@@ -1,9 +1,14 @@
-package lv.lumii.qrng.clienttoken;
+package lv.lumii.tls.auth;
 
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
-import org.bouncycastle.openssl.PEMKeyPair;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.openssl.PEMDecryptorProvider;
+import org.bouncycastle.openssl.PEMEncryptedKeyPair;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
+import org.bouncycastle.openssl.jcajce.JceOpenSSLPKCS8DecryptorProviderBuilder;
+import org.bouncycastle.openssl.jcajce.JcePEMDecryptorProviderBuilder;
+import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
 import org.cactoos.scalar.Sticky;
 import org.cactoos.scalar.Unchecked;
 
@@ -17,6 +22,15 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 
 public class FileToken implements Token {
+
+    static {
+        // Adding the BC provider - we need it to be able to read and decrypt .pem files.
+        if (Security.getProvider("BC")==null) {
+            BouncyCastleProvider jceProvider = new BouncyCastleProvider();
+            // We add the BC provider as the last (since we want to prioritize Java built-in algorithms):
+            Security.addProvider(jceProvider);
+        }
+    }
 
     private final char[] password;
     private final String alias;
@@ -51,14 +65,35 @@ public class FileToken implements Token {
     private KeyStore createKeyStoreFromPemFiles(String[] pemCertFileNames, String pemKeyFileName, String keyPassword, String desiredAlias) throws Exception {
         // Load the private key
         PEMParser pemParser = new PEMParser(new FileReader(pemKeyFileName));
-        PrivateKeyInfo privateKeyInfo = (PrivateKeyInfo) pemParser.readObject();
-        // TODO: use keyPassword
-        if (!keyPassword.isEmpty())
-            throw new Exception("Password-encrypted PEM key files are not yet supported.");
 
-        JcaPEMKeyConverter converter = new JcaPEMKeyConverter();
-        PrivateKey privateKey = converter.getPrivateKey(privateKeyInfo);
+        // getting the private key from the .pem file >>>>>
+        PrivateKey privateKey;
+        Object parsedKey = pemParser.readObject();
         pemParser.close();
+        if (parsedKey instanceof PEMEncryptedKeyPair) {
+
+            PEMDecryptorProvider decProv = new JcePEMDecryptorProviderBuilder().build(keyPassword.toCharArray());
+            JcaPEMKeyConverter converter = new JcaPEMKeyConverter();
+            KeyPair keyPair = converter.getKeyPair(((PEMEncryptedKeyPair) parsedKey).decryptKeyPair(decProv));
+            privateKey = keyPair.getPrivate();
+        } else if (parsedKey instanceof PKCS8EncryptedPrivateKeyInfo) {
+            PKCS8EncryptedPrivateKeyInfo encryptedPrivateKeyInfo = (PKCS8EncryptedPrivateKeyInfo) parsedKey;
+
+            JceOpenSSLPKCS8DecryptorProviderBuilder decryptorBuilder = new JceOpenSSLPKCS8DecryptorProviderBuilder();
+            privateKey = new JcaPEMKeyConverter().getPrivateKey(
+                    encryptedPrivateKeyInfo.decryptPrivateKeyInfo(decryptorBuilder.build(keyPassword.toCharArray()))
+            );
+        }
+        else if (parsedKey instanceof PrivateKeyInfo) {
+            PrivateKeyInfo privateKeyInfo = (PrivateKeyInfo) parsedKey;
+            JcaPEMKeyConverter converter = new JcaPEMKeyConverter();
+            privateKey = converter.getPrivateKey(privateKeyInfo);
+        }
+        else {
+            throw new Exception("This particular PEM file format is not supported.");
+        }
+        // <<<<<
+
 
         // Load the certificates
         ArrayList<X509Certificate> certs = new ArrayList<>();
