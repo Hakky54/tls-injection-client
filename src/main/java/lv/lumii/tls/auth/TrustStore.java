@@ -5,6 +5,7 @@ import org.cactoos.scalar.Unchecked;
 import javax.net.ssl.TrustManagerFactory;
 import java.io.File;
 import java.io.FileInputStream;
+import java.security.Key;
 import java.security.KeyStore;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -53,5 +54,9 @@ public class TrustStore {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public KeyStore asKeyStore() {
+        return this.trustStore.value();
     }
 }

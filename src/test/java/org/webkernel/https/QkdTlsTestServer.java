@@ -12,19 +12,41 @@ import org.bouncycastle.tls.injection.InjectionPoint;
 import org.bouncycastle.tls.injection.kems.KemFactory;
 import org.openquantumsafe.Common;
 
-import javax.net.ssl.*;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLServerSocketFactory;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
-import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.util.concurrent.CompletableFuture;
 
 public class QkdTlsTestServer {
 
     private static final String MAIN_DIRECTORY = mainDirectory();
+
+    // >>>>> Credentials and trust store to connect to our KME:
+    private static final Token saeToken = new FileToken(
+            new String[]{MAIN_DIRECTORY + File.separator + "sae-2.crt.pem"},
+            MAIN_DIRECTORY + File.separator + "sae-2.key.pem",
+            "");
+    private static final TrustStore saeTrustStore = new TrustStore(new String[]{MAIN_DIRECTORY + File.separator + "ca.crt"});
+    private static final String KME_HOST_AND_PORT = "127.0.0.1:8020";
+    private static final String OTHER_SAE_ID = "USER1";
+    // <<<<<
+
+    // >>>>> Our server credentials + trust store to verify clients.
+    //For PKCS12 (.pfx):
+    //  private static final Token token = new FileToken(MAIN_DIRECTORY + File.separator + "server.pfx", "server-keystore-pass", "server");
+    //For PEM cert+key:
+    private static final Token token = new FileToken(
+            new String[]{MAIN_DIRECTORY + File.separator + "server.crt"},
+            MAIN_DIRECTORY + File.separator + "server.key",
+            "");
+    private static final TrustStore trustStore = new TrustStore(MAIN_DIRECTORY + File.separator + "ca.truststore", "ca-truststore-pass");
+    // <<<<<
 
     private static String mainDirectory() {
         File f = new File(QkdTlsTestServer.class.getProtectionDomain().getCodeSource().getLocation().getPath());
@@ -44,33 +66,26 @@ public class QkdTlsTestServer {
     }
 
     private static final int PORT = 8443;
-    private static final String KEYSTORE_PATH = "mykeystore.jks";
-    private static final String KEYSTORE_PASSWORD = "password"; // Change to your keystore password
 
     public static void main(String[] args) {
         Common.loadNativeLibrary();
 
 
         injectQKD(() -> {
-            Token saeToken = new FileToken(
-                    new String[]{MAIN_DIRECTORY + File.separator + "sae-2.crt.pem"},
-                    MAIN_DIRECTORY + File.separator + "sae-2.key.pem",
-                    "");
-            TrustManagerFactory trustMgrFact = new TrustStore(new String[]{MAIN_DIRECTORY + File.separator + "ca.crt.pem"}).trustManagerFactory();
 
             try {
                 return SSLFactory.builder()
                         .withIdentityMaterial(saeToken.key(), saeToken.password(), saeToken.certificateChain())
                         .withNeedClientAuthentication()
                         .withWantClientAuthentication()
-                        .withProtocols("TLSv1.3")
+                        .withProtocols("TLSv1.3", "TLSv1.2")
                         .withHostnameVerifier((hostname, session) -> {
                             // Trusting the KME host name
                             return true;
                         })
-                        .withTrustMaterial(trustMgrFact)
+                        .withTrustMaterial(saeTrustStore.trustManagerFactory()) // or just saeTrustStore.asKeyStore()
                         .withSecureRandom(SecureRandom.getInstanceStrong())
-                        .withCiphers("TLS_AES_256_GCM_SHA384")
+                        //.withCiphers("TLS_AES_256_GCM_SHA384") // do not specify TLS_AES_256_GCM_SHA384 for TLSv1.2
                         .build();
             } catch (Exception e) {
                 throw new RuntimeException(e);
@@ -78,26 +93,14 @@ public class QkdTlsTestServer {
         });
 
         try {
-            //For PKCS12 (.pfx):
-            //Token token = new FileToken(MAIN_DIRECTORY + File.separator + "server.pfx", "server-keystore-pass", "server");
 
-            //For PEM cert+key:
-            Token token = new FileToken(
-                    new String[]{MAIN_DIRECTORY + File.separator + "server.crt"},
-                    MAIN_DIRECTORY + File.separator + "server.key",
-                    "");
-
-            KeyStore trustStore = KeyStore.getInstance(new File(MAIN_DIRECTORY + File.separator + "ca.truststore"), "ca-truststore-pass".toCharArray());
-
-            TrustManagerFactory trustMgrFact = TrustManagerFactory.getInstance("SunX509");
-            trustMgrFact.init(trustStore);
 
             SSLFactory sslf2 = SSLFactory.builder()
                     .withIdentityMaterial(token.key(), token.password(), token.certificateChain())
                     .withNeedClientAuthentication()
                     .withWantClientAuthentication()
                     .withProtocols("TLSv1.3")
-                    .withTrustMaterial(trustMgrFact) // or just trustStore
+                    .withTrustMaterial(trustStore.trustManagerFactory()) // or just trustStore.asKeyStore()
                     .withSecureRandom(SecureRandom.getInstanceStrong())
                     .withCiphers("TLS_AES_256_GCM_SHA384")
                     .build();
@@ -105,8 +108,7 @@ public class QkdTlsTestServer {
             // Initialize SSLContext with the KeyManager
             SSLContext sslContext = sslf2.getSslContext();
 
-            TrustManager[] trustManagers = trustMgrFact.getTrustManagers();
-            sslContext.init(sslf2.getKeyManagerFactory().get().getKeyManagers(), trustManagers, null);
+            sslContext.init(sslf2.getKeyManagerFactory().get().getKeyManagers(), trustStore.trustManagerFactory().getTrustManagers(), SecureRandom.getInstanceStrong());
 
             // Create SSLServerSocketFactory
             SSLServerSocketFactory sslServerSocketFactory = sslContext.getServerSocketFactory();
@@ -151,8 +153,8 @@ public class QkdTlsTestServer {
 
         KemFactory qkdKemFactory = () -> new InjectableEtsiKEM(
                 sslf1,
-                "localhost:8020",
-                "25840139-0dd4-49ae-ba1e-b86731601803",
+                KME_HOST_AND_PORT,
+                OTHER_SAE_ID,
                 () -> {
                     try {
                         injectionPoint.pop(algsWithEtsi.get());
