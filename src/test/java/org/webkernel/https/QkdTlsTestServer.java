@@ -23,18 +23,23 @@ import java.net.Socket;
 import java.security.SecureRandom;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * A TLS server that uses QKD keys to secure TLS sessions.
+ *
+ * For testing purposes, you can use QKD KME simulator from here: https://github.com/next-door-key/py-qkd-kme-sim
+ */
 public class QkdTlsTestServer {
 
     private static final String MAIN_DIRECTORY = mainDirectory();
 
     // >>>>> Credentials and trust store to connect to our KME:
     private static final Token saeToken = new FileToken(
-            new String[]{MAIN_DIRECTORY + File.separator + "sae-2.crt.pem"},
-            MAIN_DIRECTORY + File.separator + "sae-2.key.pem",
+            new String[]{MAIN_DIRECTORY + File.separator + "sae-2.crt"},
+            MAIN_DIRECTORY + File.separator + "sae-2.key",
             "");
     private static final TrustStore saeTrustStore = new TrustStore(new String[]{MAIN_DIRECTORY + File.separator + "ca.crt"});
-    private static final String KME_HOST_AND_PORT = "127.0.0.1:8020";
-    private static final String OTHER_SAE_ID = "USER1";
+    private static final String KME_HOST_AND_PORT = "127.0.0.1:9000";
+    private static final String OTHER_SAE_ID = "foo-bar";
     // <<<<<
 
     // >>>>> Our server credentials + trust store to verify clients.

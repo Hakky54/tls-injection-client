@@ -12,25 +12,30 @@ import org.bouncycastle.tls.injection.kems.KemFactory;
 import org.openquantumsafe.Common;
 
 import javax.net.ssl.SSLSocket;
-import javax.net.ssl.TrustManagerFactory;
-import java.io.*;
-import java.security.KeyStore;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.security.SecureRandom;
 import java.util.concurrent.CompletableFuture;
 
-
+/**
+ * A TLS client that uses a key obtained from a QKD device to secure the TLS session.
+ *
+ * For testing purposes, you can use QKD KME simulator from here: https://github.com/next-door-key/py-qkd-kme-sim
+ */
 public class QkdTlsTestClient {
 
     private static final String MAIN_DIRECTORY = mainDirectory();
 
     // >>>>> Credentials and trust store to connect to our KME:
     private static final Token saeToken = new FileToken(
-            new String[] {MAIN_DIRECTORY + File.separator + "sae-1.crt.pem"},
-            MAIN_DIRECTORY + File.separator + "sae-1.key.pem",
+            new String[] {MAIN_DIRECTORY + File.separator + "sae-1.crt"},
+            MAIN_DIRECTORY + File.separator + "sae-1.key",
             "");
     private static final TrustStore saeTrustStore = new TrustStore(new String[]{MAIN_DIRECTORY + File.separator + "ca.crt"});
-    private static final String KME_HOST_AND_PORT = "127.0.0.1:8010";
-    private static final String OTHER_SAE_ID = "USER2";
+    private static final String KME_HOST_AND_PORT = "127.0.0.1:8000";
+    private static final String OTHER_SAE_ID = "bar-foo";
     // <<<<<
 
     // >>>>> Our server credentials + trust store to verify clients.
