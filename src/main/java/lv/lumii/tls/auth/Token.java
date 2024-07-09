@@ -4,14 +4,14 @@ import java.security.Key;
 import java.security.cert.Certificate;
 
 /**
- * Represents a QRNG client token.
+ * Represents a client token: either a private key, which can be obtained via the key() function,
+ * or the signed() function to sign messages, e.g., via an external device such as a smartcard.
  */
 public interface Token {
 
     /**
      * Returns a private key to be used to sign a TLS message when authenticating the QRNG client.
      * @return returns true or dummy key (BC TLS implementation needs some, at least dummy, key, even if we implement the sign function on a smart card)
-     * @throws Exception it can be
      */
     Key key();
 
