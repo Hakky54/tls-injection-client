@@ -9,6 +9,7 @@ import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
 import org.bouncycastle.openssl.jcajce.JceOpenSSLPKCS8DecryptorProviderBuilder;
 import org.bouncycastle.openssl.jcajce.JcePEMDecryptorProviderBuilder;
 import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
+import org.cactoos.Scalar;
 import org.cactoos.scalar.Sticky;
 import org.cactoos.scalar.Unchecked;
 
@@ -20,6 +21,9 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Scanner;
 
 public class FileToken implements Token {
 
@@ -33,19 +37,19 @@ public class FileToken implements Token {
     }
 
     private final char[] password;
-    private final String alias;
+    private final Scalar<String> alias;
     private final Unchecked<KeyStore> keyStore;
 
     public FileToken(String pfxFileName, String password, String alias) {
         this.password = password.toCharArray();
-        this.alias = alias;
+        this.alias = new Sticky<>(()->(alias.isBlank()?this.firstAliasFromKeyStore():alias));
         this.keyStore = new Unchecked<>(new Sticky<>(() -> loadKeyStore(pfxFileName)));
     }
 
     public FileToken(String[] pemCertFileNames, String pemKeyFileName, String keyPassword) {
         this.password = keyPassword.toCharArray();
-        this.alias = "client/server";
-        this.keyStore = new Unchecked<>(new Sticky<>(() -> createKeyStoreFromPemFiles(pemCertFileNames, pemKeyFileName, keyPassword, this.alias)));
+        this.alias = new Sticky<>(()->"client/server");
+        this.keyStore = new Unchecked<>(new Sticky<>(() -> createKeyStoreFromPemFiles(pemCertFileNames, pemKeyFileName, keyPassword, this.alias.value())));
     }
 
     private KeyStore loadKeyStore(String fileName) throws Exception {
@@ -114,10 +118,17 @@ public class FileToken implements Token {
         return keyStore;
     }
 
+    private String firstAliasFromKeyStore() throws Exception {
+        List<String> aliases = Collections.list(this.keyStore.value().aliases());
+        if (aliases.isEmpty())
+            throw new Exception("The PKCS12 store does not contain any aliases.");
+        return aliases.getFirst();
+    }
+
     @Override
     public Key key() {
         try {
-            return this.keyStore.value().getKey(alias, password);
+            return this.keyStore.value().getKey(alias.value(), password);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -136,9 +147,10 @@ public class FileToken implements Token {
     @Override
     public Certificate[] certificateChain() {
         try {
-            return this.keyStore.value().getCertificateChain(this.alias);
-        } catch (KeyStoreException e) {
+            return this.keyStore.value().getCertificateChain(this.alias.value());
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
+
 }
