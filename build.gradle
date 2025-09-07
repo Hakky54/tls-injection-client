@@ -76,7 +76,7 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:5.0.0-alpha.14'
 
     // SSLFactory builder, see https://github.com/Hakky54/sslcontext-kickstart
-    implementation 'io.github.hakky54:sslcontext-kickstart:8.3.5'
+    implementation 'io.github.hakky54:ayza:10.0.0'
 
     // Gson JSON parser
     implementation 'com.google.code.gson:gson:2.11.0'
